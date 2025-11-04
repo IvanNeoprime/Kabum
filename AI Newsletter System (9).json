@@ -1,0 +1,1920 @@
+{
+  "name": "AI Newsletter System",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        4720
+      ],
+      "id": "4be64463-8f42-4948-8240-67c9a8f26b88",
+      "name": "Start Workflow"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1yIJc6IJHCUOL_SNlBCrjU8pmAlleAwru",
+            "mode": "list",
+            "cachedResultName": "kabumm revistas",
+            "cachedResultUrl": "https://drive.google.com/drive/folders/1yIJc6IJHCUOL_SNlBCrjU8pmAlleAwru"
+          },
+          "whatToSearch": "files"
+        },
+        "options": {
+          "fields": [
+            "id",
+            "name"
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        432,
+        4720
+      ],
+      "id": "1d044e41-7aca-4208-a1e1-4754ecf9173d",
+      "name": "1. Search PDF Files"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{ $json.id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1024,
+        4720
+      ],
+      "id": "ee1334ab-344a-490f-bdcf-b35031149504",
+      "name": "2. Download Files"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        1264,
+        4720
+      ],
+      "id": "fc0d78a3-b881-467a-9674-78246bc5693b",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1008,
+        4400
+      ],
+      "id": "194765d7-19d7-49a7-8e66-d9aef858009e",
+      "name": "Aggregate Results"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.text || '';\n\n// Clean text function\nfunction cleanText(t) {\n  if (!t) return '';\n  const str = String(t);\n  return str.replace(/[\\u00A0\\u2000-\\u200B\\u2028\\u2029]/g, ' ').replace(/\\s+/g, ' ').trim();\n}\n\n// Extract edition number\nfunction extractEdition(t) {\n  if (!t) return null;\n  const str = String(t);\n  const patterns = [\n    /([0-9]+)ª\\s*[Ee]di[çc][ãa]o/i,\n    /([0-9]+)a\\s*[Ee]dicao/i,\n    /[Ee]di[çc][ãa]o\\s*([0-9]+)/i\n  ];\n  for (const p of patterns) {\n    const m = str.match(p);\n    if (m && m[1]) return m[1] + 'ª Edição';\n  }\n  return null;\n}\n\n// Extract publication date\nfunction extractDate(t) {\n  if (!t) return null;\n  const str = String(t);\n  const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];\n  const pattern = new RegExp(`(${months.join('|')})\\s+de\\s+(20[0-9]{2})`, 'i');\n  const m = str.match(pattern);\n  return m ? `${m[1]} de ${m[2]}` : null;\n}\n\n// Extract main headline\nfunction extractHeadline(t) {\n  if (!t) return null;\n  const str = String(t);\n  const lines = str.split('\\n').map(l => cleanText(l)).filter(l => l.length > 0);\n  for (let i = 2; i < Math.min(10, lines.length); i++) {\n    const line = lines[i];\n    if (line.length > 10 && line.length < 80 && \n        !line.match(/FIQUE|PUBLICIDADE|Quem Somos|Ficha Técnica/i) &&\n        line !== line.toLowerCase()) {\n      return line;\n    }\n  }\n  return null;\n}\n\n// Extract editorial team\nfunction extractEditorialTeam(t) {\n  if (!t) return [];\n  const str = String(t);\n  const team = [];\n  const sectionMatch = str.match(/Ficha\\s+Técnica([\\s\\S]{0,800})/i);\n  if (sectionMatch) {\n    const section = sectionMatch[1];\n    const lines = section.split('\\n').map(l => cleanText(l)).filter(l => l.length > 0);\n    \n    for (let i = 0; i < lines.length - 1; i++) {\n      const name = lines[i];\n      const role = lines[i + 1];\n      \n      if (name && role && \n          name.length > 5 && name.length < 60 &&\n          role.length > 10 && role.length < 80 &&\n          name.match(/^[A-ZÁÉÍÓÚÃ][a-záéíóúãçõ]+(\\s+[A-ZÁÉÍÓÚÃ][a-záéíóúãçõ]+)+$/) &&\n          role.match(/^[A-Z]/)) {\n        team.push(`${name} - ${role}`);\n        i++;\n      }\n    }\n  }\n  return team.slice(0, 8);\n}\n\n// Extract article titles\nfunction extractArticleTitles(t) {\n  if (!t) return [];\n  const str = String(t);\n  const titles = [];\n  const indexMatch = str.match(/Índice([\\s\\S]{0,3000})/i);\n  if (indexMatch) {\n    const indexSection = indexMatch[1];\n    const lines = indexSection.split('\\n').map(l => cleanText(l)).filter(l => l.length > 0);\n    \n    for (const line of lines) {\n      const cleanTitle = line.replace(/^[\\d\\sں•]+/, '').replace(/\\s+\\d+$/, '').trim();\n      if (cleanTitle.length > 15 && cleanTitle.length < 200 && \n          !cleanTitle.match(/PUBLICIDADE|Índice/i) &&\n          cleanTitle !== cleanTitle.toUpperCase() &&\n          /[a-záéíóúãç]/.test(cleanTitle)) {\n        titles.push(cleanTitle);\n      }\n    }\n  }\n  return [...new Set(titles)].slice(0, 30);\n}\n\n// Extract featured people\nfunction extractPeople(t) {\n  if (!t) return [];\n  const str = String(t);\n  const people = new Set();\n  \n  const featuredPattern = /ں\\s+ں\\s+ں\\s+ں\\s+([A-ZÁÉÍÓÚÃ][a-záéíóúãçõ]+\\s+[A-ZÁÉÍÓÚÃ][a-záéíóúãçõ]+(?:\\s+[A-ZÁÉÍÓÚÃ][a-záéíóúãçõ]+)?)/g;\n  let match;\n  while ((match = featuredPattern.exec(str)) !== null) {\n    const name = cleanText(match[1]);\n    if (name.length > 5 && name.length < 50) {\n      people.add(name);\n    }\n  }\n  \n  const nameRolePattern = /([A-ZÁÉÍÓÚÃ][a-záéíóúãçõ]+\\s+[A-ZÁÉÍÓÚÃ][a-záéíóúãçõ]+(?:\\s+[A-ZÁÉÍÓÚÃ][a-záéíóúãçõ]+)?)\\s+(?:é|foi|está|trabalha|fundou|CEO|Diretor|Gestor)/gi;\n  while ((match = nameRolePattern.exec(str)) !== null) {\n    const name = cleanText(match[1]);\n    if (name.length > 5 && name.length < 50) {\n      people.add(name);\n    }\n  }\n  \n  return Array.from(people).slice(0, 25);\n}\n\n// Extract companies\nfunction extractCompanies(t) {\n  if (!t) return [];\n  const str = String(t);\n  const companies = new Set();\n  const patterns = [\n    'Kula', 'Kunona', 'Tablu', 'Chairman Studios', 'Wei', 'TechLit', 'Jetstream', 'Synchron',\n    'Tsolnet', 'Moza Banco', 'Vodacom', 'OpenAI', 'Microsoft', 'Apple', 'Google', 'Amazon',\n    'Raxio', 'Newchip', 'IBM', 'Standard Bank', 'Fintech.MZ', 'GoMarket', 'Baoba Hub',\n    'Kudziva', 'Ruca', 'Dino Valeta', 'CES', 'Catalyst Fund',\n    'Spot Comunicação', 'Lifesten Health', 'TechLit África', 'Jetstream África'\n  ];\n  \n  for (const p of patterns) {\n    if (str.includes(p)) companies.add(p);\n  }\n  \n  return Array.from(companies);\n}\n\n// Extract technical terms\nfunction extractTechTerms(t) {\n  if (!t) return [];\n  const str = String(t);\n  const terms = new Set();\n  const pattern = /\\b(IA|UX|UI|CEO|CTO|CFO|KYC|TIC|BCI|API|SDK|CES|IoT|SaaS|PaaS|AI|ML|UEM|ISCTEM|EUA|NASA)\\b/gi;\n  let match;\n  while ((match = pattern.exec(str)) !== null) {\n    terms.add(match[1]);\n  }\n  return Array.from(terms);\n}\n\n// Extract technologies\nfunction extractTechnologies(t) {\n  if (!t) return [];\n  const str = String(t);\n  const techs = new Set();\n  const techList = ['ChatGPT', 'M-Pesa', 'Inteligência Artificial', 'Big Data', 'Cloud', 'Blockchain', 'Machine Learning', 'energia solar', 'energia renovável', 'fintech', 'agritech', 'edtech', 'robô de colheita', 'carro voador'];\n  \n  for (const tech of techList) {\n    if (str.toLowerCase().includes(tech.toLowerCase())) {\n      techs.add(tech);\n    }\n  }\n  \n  return Array.from(techs);\n}\n\n// Extract products\nfunction extractProducts(t) {\n  if (!t) return [];\n  const str = String(t);\n  const products = new Set();\n  const productList = ['Aska A5', 'Nanoleaf 4D', 'robô de colheita', 'MacBook', 'iPhone', 'Google Gemini', 'Zoundream', 'carro voador elétrico'];\n  \n  for (const p of productList) {\n    if (str.toLowerCase().includes(p.toLowerCase())) {\n      products.add(p);\n    }\n  }\n  \n  return Array.from(products);\n}\n\n// Extract funding\nfunction extractFunding(t) {\n  if (!t) return [];\n  const str = String(t);\n  const funding = new Set();\n  const patterns = [\n    /([0-9]+(?:[.,][0-9]+)?)\\s*(?:mil(?:h[õo]es)?|bilh[õo]es?)\\s+de\\s+d[óo]lares?/gi,\n    /([0-9]+)\\s*mil(?:h[õo]es)?\\s*(?:de\\s+)?d[óo]lares?/gi,\n    /([0-9]+)\\s*milh[õo]es\\s*(?:de\\s+)?d[óo]lares?/gi\n  ];\n  \n  for (const p of patterns) {\n    let m;\n    while ((m = p.exec(str)) !== null && funding.size < 15) {\n      funding.add(m[0]);\n    }\n  }\n  \n  return Array.from(funding);\n}\n\n// Extract events\nfunction extractEvents(t) {\n  if (!t) return [];\n  const str = String(t);\n  const events = new Set();\n  const eventList = ['CES 2023', 'Newchip', 'Hanga Pitchfest', 'Africa Tech Summit', 'Demo Week', 'Catalyst Fund', 'Newchip Demo Week', 'Plug and Play Friday Pitch Session'];\n  \n  for (const e of eventList) {\n    if (str.includes(e)) events.add(e);\n  }\n  \n  return Array.from(events);\n}\n\n// Extract universities\nfunction extractUniversities(t) {\n  if (!t) return [];\n  const str = String(t);\n  const unis = new Set();\n  const uniList = ['ISCTEM', 'UEM', 'Universidade Eduardo Mondlane', 'Universidade Pedagógica', 'HEC Paris', 'Universidade Hasselt', 'University of Global Health Equity', 'Olivet University'];\n  \n  for (const u of uniList) {\n    if (str.includes(u)) unis.add(u);\n  }\n  \n  return Array.from(unis);\n}\n\n// Extract statistics\nfunction extractStatistics(t) {\n  if (!t) return [];\n  const str = String(t);\n  const stats = new Set();\n  const patterns = [\n    /([0-9]+(?:[.,][0-9]+)?)\\s*(?:mil|milh[ãa]o|bilh[ãa]o|utilizadores|membros|visualiza[çc][õo]es|pessoas|usuários)/gi,\n    /([0-9]+)\\s*(?:mil|milh[ãa]o)\\s*(?:de\\s+)?d[óo]lares?/gi\n  ];\n  \n  for (const p of patterns) {\n    let m;\n    while ((m = p.exec(str)) !== null && stats.size < 20) {\n      stats.add(m[0]);\n    }\n  }\n  \n  return Array.from(stats);\n}\n\n// Extract locations\nfunction extractLocations(t) {\n  if (!t) return [];\n  const str = String(t);\n  const locs = new Set();\n  const locationList = ['Moçambique', 'Maputo', 'Quênia', 'Ruanda', 'Nigéria', 'EUA', 'Angola', 'África do Sul', 'Califórnia', 'Uganda', 'Egito', 'Las Vegas', 'Senegal', 'Marrocos', 'Namíbia', 'Zâmbia', 'Zimbabwe', 'Malawi', 'Botswana'];\n  \n  for (const l of locationList) {\n    if (str.includes(l)) {\n      locs.add(l);\n    }\n  }\n  \n  return Array.from(locs).slice(0, 20);\n}\n\n// Extract sectors\nfunction extractSectors(t) {\n  if (!t) return [];\n  const str = String(t);\n  const sectors = new Set();\n  const sectorList = ['fintech', 'agritech', 'edtech', 'energia renovável', 'logística', 'saúde', 'tecnologia médica', 'telecomunicações', 'banco', 'seguros'];\n  \n  for (const s of sectorList) {\n    if (str.toLowerCase().includes(s.toLowerCase())) {\n      sectors.add(s);\n    }\n  }\n  \n  return Array.from(sectors);\n}\n\n// Extract articles with content\nfunction extractArticlesWithContent(t) {\n  if (!t) return [];\n  const str = String(t);\n  const articles = [];\n  const sections = str.split(/\\n\\n+/);\n  let currentTitle = null;\n  let currentContent = [];\n  \n  for (const section of sections) {\n    const clean = cleanText(section);\n    \n    if (clean.match(/^ں+/) || (clean.length > 20 && clean.length < 150 && \n        clean === clean.toUpperCase() && !clean.includes('PUBLICIDADE'))) {\n      \n      if (currentTitle && currentContent.length > 0) {\n        articles.push({\n          title: currentTitle.replace(/^ں+\\s*/, ''),\n          content: currentContent.join('\\n\\n').substring(0, 8000)\n        });\n      }\n      \n      currentTitle = clean;\n      currentContent = [];\n    } else if (currentTitle && clean.length > 50 && !clean.includes('PUBLICIDADE')) {\n      currentContent.push(clean);\n    }\n  }\n  \n  if (currentTitle && currentContent.length > 0) {\n    articles.push({\n      title: currentTitle.replace(/^ں+\\s*/, ''),\n      content: currentContent.join('\\n\\n').substring(0, 8000)\n    });\n  }\n  \n  return articles.slice(0, 20);\n}\n\n// Extract awards\nfunction extractAwards(t) {\n  if (!t) return [];\n  const str = String(t);\n  const awards = new Set();\n  const awardPatterns = ['CNN Hero', 'CES.*?Award', 'Inovador.*?do ano', 'heroína do ano', 'prêmio de melhor subsidiária'];\n  \n  for (const p of awardPatterns) {\n    const regex = new RegExp(p, 'gi');\n    const matches = str.match(regex);\n    if (matches) {\n      matches.forEach(m => awards.add(m));\n    }\n  }\n  \n  return Array.from(awards);\n}\n\n// Extract total pages\nfunction extractTotalPages(t) {\n  if (!t) return null;\n  const str = String(t);\n  const pageNumbers = str.match(/\\b([0-9]{1,3})\\b/g);\n  if (pageNumbers) {\n    const numbers = pageNumbers.map(n => parseInt(n)).filter(n => n < 200);\n    return numbers.length > 0 ? Math.max(...numbers) : null;\n  }\n  return null;\n}\n\n// Extract advertising brands\nfunction extractAdvertisingBrands(t) {\n  if (!t) return [];\n  const str = String(t);\n  const brands = ['Baoba Hub', 'GoMarket', 'Kudziva', 'Ruca', 'Dino Valeta'];\n  return brands.filter(b => str.includes(b));\n}\n\n// Main extraction\nconst textStr = String(text);\nreturn {\n  json: {\n    edition_number: extractEdition(textStr),\n    publication_date: extractDate(textStr),\n    main_headline: extractHeadline(textStr),\n    editorial_team: extractEditorialTeam(textStr),\n    featured_people: extractPeople(textStr),\n    featured_companies: extractCompanies(textStr),\n    article_titles: extractArticleTitles(textStr),\n    technical_terms: extractTechTerms(textStr),\n    technologies_mentioned: extractTechnologies(textStr),\n    products_services: extractProducts(textStr),\n    title_with_associated_content: extractArticlesWithContent(textStr),\n    international_news: [],\n    african_news: [],\n    mozambique_focus: [],\n    funding_investments: extractFunding(textStr),\n    events_mentioned: extractEvents(textStr),\n    universities_institutions: extractUniversities(textStr),\n    key_statistics: extractStatistics(textStr),\n    geographic_locations: extractLocations(textStr),\n    industry_sectors: extractSectors(textStr),\n    total_pages: extractTotalPages(textStr),\n    advertising_brands: extractAdvertisingBrands(textStr),\n    awards_recognition: extractAwards(textStr),\n    extracted_at: new Date().toISOString(),\n    word_count: textStr.split(/\\s+/).filter(w => w.length > 0).length,\n    text_length: textStr.length\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        4400
+      ],
+      "id": "fd4d4004-4ac8-4a20-8c02-9b1e15bd7f5e",
+      "name": "Extract Magazine Data"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        592,
+        1568
+      ],
+      "id": "8fb96bbe-30c2-4185-b293-44f246395b5e",
+      "name": "Download PDF",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "B1BJBJ4kfTVSf1cV",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {
+          "maxPages": 50
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        784,
+        1568
+      ],
+      "id": "a579fdcb-57d5-4386-8401-1d24932d4a9b",
+      "name": "Extract Text from PDF"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Texto do documento: {{ $json.text }}",
+        "options": {
+          "systemMessage": "=## Objective\nGenerate an HTML blog post in Portuguese that adapts the structure and format of the provided example based on the content type derived from {{ $json.cleanedText }}. The post must focus on a technology, innovation, or digital inclusion topic in a developing region (e.g., Africa or Latin America), using original phrasing, a neutral tone, and factual-sounding details. The structure should dynamically adjust to the content type while maintaining the example's HTML classes, elements, and styling, with inline CSS to ensure proper rendering in WordPress. The title must use `<h1 class=\"entry-title\">` for clear separation.\n\n---\n\n## Step 0: Consult the Artigos Tool (MANDATORY)\n\n**Before generating any content:**\n- Use the \"Artigos\" tool to access the top 20 articles available.\n- Review the **structure, tone, format, and depth of knowledge** used in these articles.\n- Use this tool **ONLY as a reference** for style and format—do NOT copy content from existing articles.\n- Extract insights on how to write with credibility and professionalism.\n\n---\n\n## Step 1: Classify Content Type from {{ $json.cleanedText }}\n\nAnalyze {{ $json.cleanedText }} to categorize the content into one of the following types based on its focus:\n\n- **Project Announcement**: Initiatives like rural connectivity or tech programs (e.g., Starlink at Maputo Skate Park, Sandbox Regulatório).\n- **Statistical Report**: Data-driven insights on tech usage or trends (e.g., Data Reportal internet access stats).\n- **Individual Achievement**: Stories of personal tech innovations or careers (e.g., Adacto Caires Pambe's apps, Nélio's recycled energy system).\n- **Social Media/Tech Trend**: Analysis of digital behaviors or platforms (e.g., social media \"stories\" impact).\n- **Organizational Initiative**: Efforts by companies or communities (e.g., Girl MOVE Academy, DMKT 360's Social Media Club).\n\n**Extract key details:** project/individual names, locations, organizations, objectives, stats, quotes, or outcomes.\n\n**IMPORTANT - Information Verification:**\n- **DO NOT invent details** if they are not present in {{ $json.cleanedText }}.\n- **ONLY use information directly provided** or clearly implied from the source material.\n- If details are missing, **state this limitation** or consult the Artigos tool for similar contexts—do NOT fabricate specifics.\n- For quotes: **Only use direct quotes from {{ $json.cleanedText }}** or clearly attribute paraphrased statements. Do NOT invent quotes.\n\n---\n\n## Step 2: Define Structure Based on Content Type\n\nUse the example's structure as a baseline (`<div class=\"entry-content\">`, `<p>`, `<h4>`, etc.) but adapt sections to suit the content type.\n\n### Project Announcement Structure:\n- **Title**: Bold project goal in `<h1 class=\"entry-title\">[Headline]</h1>`\n- **Intro**: 2-3 `<p>` on project scope, organizations, and goals\n- **Ad 1**: Kabum Digital banner\n- **Body**: Implementation details, subheading on inclusion/benefits, quote, and components\n- **Related News**: 2 links to similar articles (ONLY from provided sources or existing Artigos)\n- **Conclusion**: Stats and impacts\n- **Source and Ad 2**\n\n### Statistical Report Structure:\n- **Title**: Highlight key stat in `<h1 class=\"entry-title\">[Headline]</h1>`\n- **Intro**: 1-2 `<p>` summarizing data and source\n- **Ad 1**: Kabum Digital banner\n- **Body**: Detailed stats, subheading on challenges/solutions, quote from official\n- **Related News**: 2 links to tech trends or reports (ONLY from provided sources)\n- **Conclusion**: Implications and future outlook\n- **Source and Ad 2**\n\n### Individual Achievement Structure:\n- **Title**: Name and innovation in `<h1 class=\"entry-title\">[Headline]</h1>`\n- **Intro**: 1-2 `<p>` on individual's background and achievement\n- **Ad 1**: Kabum Digital banner\n- **Body**: Details of work, subheading on impact/inspiration, quote from individual\n- **Related News**: 2 links to other innovators or tech stories (ONLY from provided sources)\n- **Conclusion**: Broader impact or future plans\n- **Source and Ad 2**\n\n### Social Media/Tech Trend Structure:\n- **Title**: Trend focus in `<h1 class=\"entry-title\">[Headline]</h1>`\n- **Intro**: 1-2 `<p>` introducing trend and context\n- **Ad 1**: Kabum Digital banner\n- **Body**: Analysis, subheading on impacts (positive/negative), quote from expert or user\n- **Related News**: 2 links to digital culture or tech behavior stories (ONLY from provided sources)\n- **Conclusion**: Recommendations or balanced view\n- **Source and Ad 2**\n\n### Organizational Initiative Structure:\n- **Title**: Organization and goal in `<h1 class=\"entry-title\">[Headline]</h1>`\n- **Intro**: 2 `<p>` on organization's mission and initiative\n- **Ad 1**: Kabum Digital banner\n- **Body**: Program details, subheading on outcomes, quote from leader/participant\n- **Related News**: 2 links to similar organizations or initiatives (ONLY from provided sources)\n- **Conclusion**: Future goals and societal impact\n- **Source and Ad 2**\n\n---\n\n## Step 3: Ensure Proper HTML Structure\n\n- **Title**: `<h1 class=\"entry-title\">[Headline]</h1>` as the first element inside `<div class=\"entry-content\">`\n- **Ad Sections**: Use the simplified Kabum Digital ad template for both Ad 1 and Ad 2\n- **Subheadings**: `<h4 id=\"[unique-slug]\" class=\"wp-block-heading\"><strong>[Text]</strong></h4>` for main subheading; `<h4 id=\"outras-noticias-para-ler\" class=\"wp-block-heading\">Outras notícias para ler:</h4>` for related news\n- **Quote**: `<blockquote class=\"wp-block-quote is-layout-flow wp-block-quote-is-layout-flow\"><p>[Quote]</p></blockquote>`\n- **Related News**: `<ul class=\"wp-block-list\"><li><a href=\"[URL]\"><strong>[Title]</strong></a></li></ul>` (2 items)\n- **Separator**: `<hr class=\"wp-block-separator has-alpha-channel-opacity\">`\n- **Source**: `<p><strong><span class=\"cnvs-badge is-cnvs-badge-color-primary\">Fonte</span> </strong><a href=\"[source-url]\"><strong><span class=\"cnvs-badge is-cnvs-badge-color-dark\">[Source Name]</span></strong></a></p>`\n\n### Ad Template (Kabum Digital):\n```html\n<figure class=\"pk-pin-it-container\">\n  <a href=\"https://kabum.digital/downloads/11430/?tmstv=1759748413\" aria-label=\"Kabum Digital – Revista_banner para o site-01\">\n    <img src=\"https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-scaled.jpg\" alt=\"\" srcset=\"https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-scaled.jpg 2560w, https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-300x65.jpg 300w, https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-1024x221.jpg 1024w, https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-768x165.jpg 768w, https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-1536x331.jpg 1536w, https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-2048x441.jpg 2048w, https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-380x82.jpg 380w, https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-550x118.jpg 550w, https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-800x172.jpg 800w, https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-1160x250.jpg 1160w\" width=\"2560\" height=\"551\" class=\"pk-pin-it-ready lazyautosizes ls-is-cached pk-lazyloaded\" data-pk-sizes=\"auto\" data-ls-sizes=\"(max-width: 2560px) 100vw, 2560px\" data-pk-src=\"https://kabum.digital/wp-content/uploads/2025/10/Kabum-Digital-Revista_banner-para-o-site-01-scaled.jpg\" sizes=\"700px\">\n  </a>\n</figure>\n```\n\n---\n\n## Step 4: Content Generation Guidelines\n\n**Language**: Write in Portuguese, matching a formal, neutral tone.\n\n**Originality & Factuality**: \n- Paraphrase {{ $json.cleanedText }} to create unique text—do NOT copy directly from the example or input.\n- **CRITICAL: Do NOT invent information.** Only expand on details explicitly provided in {{ $json.cleanedText }}.\n- If specific numbers, dates, or facts are missing, do NOT fabricate them. Instead, use general statements (e.g., \"increased access\" instead of \"increased by 75%\").\n\n**Links**:\n- **IF a link is provided in {{ $json.cleanedText }}**: Use it exactly as given. Do NOT modify, edit, or change it in any way.\n- **IF no link is provided**: Do NOT create fake links. Leave the related news section with only the article titles, or reference the Artigos tool for real, existing links from previous articles.\n- **Related News Links**: Only include links that are confirmed to exist from the Artigos tool or {{ $json.cleanedText }}. Do NOT invent URLs.\n\n**Quotes**:\n- Use direct quotes from {{ $json.cleanedText }} when available.\n- If paraphrasing, ensure the meaning is accurate and attribution is clear.\n- Do NOT invent or fabricate quotes from sources not mentioned in {{ $json.cleanedText }}.\n\n**Details**:\n- Include specifics **only if provided in the source material** (e.g., numbers, locations, benefits).\n- For individuals, highlight background and impact based on actual information.\n- Avoid vague claims unless they reflect the content's substance.\n\n**Length**: Keep paragraphs short (2-3 sentences), similar to the example, with 5-8 paragraphs total, adjusted to content type.\n\n---\n\n## Step 5: HTML and Formatting\n\n- Wrap content in `<div class=\"entry-content\">...</div>`, with the title `<h1 class=\"entry-title\">` as the first element inside.\n- Use exact classes (e.g., pk-pin-it-ready, lazyautosizes, wp-block-quote-is-layout-flow) for WordPress theme compatibility.\n- Add inline CSS within `<div class=\"entry-content\">` using a `<style>` tag:\n  - `.entry-title`: Font size 28px, bold, margin adjustments\n  - `.entry-content p`: Font size 16px, line height 1.6, margin\n  - `.wp-block-heading`: Font size 20px, bold, margin adjustments\n  - `.wp-block-quote`: Italic text, bordered left, padding\n  - `.cnvs-badge`: Colored badges (primary: blue, dark: black)\n  - `.pk-pin-it-container`: Responsive container styling\n  - `.wp-block-list li`: List styling for related news\n  - `.wp-block-separator`: Horizontal rule styling\n- Use the Kabum Digital ad template exactly as provided—do NOT modify the img attributes (srcset, sizes, class, data attributes, width, height, etc.)\n- Create unique subheading IDs in slug format (e.g., promover-acesso-digital).\n\n---\n\n## Step 6: Error Handling & Fallback Rules\n\n**If {{ $json.cleanedText }} is empty or unclear:**\n- Default to a **Project Announcement** type.\n- Consult the **Artigos tool** for context and similar topics.\n- Do NOT invent a fictional initiative. Instead, request clarification or use only information from the Artigos tool as reference.\n\n**If the content type is ambiguous:**\n- Infer the most fitting category based on keywords from {{ $json.cleanedText }}.\n- If uncertain, default to the broadest category that fits the available data.\n\n**Source Attribution:**\n- Use {{ $json.cleanedText }}'s source URL and name if provided—exactly as given, no modifications.\n- If no source is provided, do NOT invent one. Check the Artigos tool for similar topics or use a generic statement like \"Fonte: Informação fornecida.\"\n- Ensure the source is real and verifiable when possible.\n\n---\n\n## Output Requirements\n\nProvide the complete HTML blog post within `<div class=\"entry-content\">...</div>`, in Portuguese, dynamically structured based on the classified content type from {{ $json.cleanedText }}, with:\n\n1. Title in `<h1 class=\"entry-title\">[Headline]</h1>` as the first element\n2. A `<style>` tag with inline CSS immediately following the title\n3. All remaining content adhering to the example's format and styling\n4. Kabum Digital ad template for both ad placements with exact image attributes and unique sequential IDs\n5. **No fake information, fake links, or fabricated details**\n6. All links from provided sources used exactly as given\n7. Related news links only from verified sources (Artigos tool or {{ $json.cleanedText }})\n8. Proper attribution and source documentation"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1024,
+        1568
+      ],
+      "id": "3d257dcc-4795-4887-a6ec-70fcbe30a279",
+      "name": "AI Content Generator"
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        1744
+      ],
+      "id": "6e6ddd10-fbdb-4463-a02c-ea5756ee8d05",
+      "name": "Google Gemini Pro",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "aBKZ6rRmhjWVPgW7",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert research assistant for **Kabum Digital**, a monthly technology magazine focused on Mozambican and African tech innovations. Your mission is to generate, validate, and execute comprehensive web search queries to gather content for future editions.\n\n## Magazine Focus Areas\n- **Local**: Mozambican startups, fintech, edtech, energy, digital agencies, government tech initiatives\n- **Continental**: African tech ecosystems (Kenya, Nigeria, South Africa, Rwanda, etc.)\n- **Global**: International tech with African impact, AI developments, investments\n- **Content Types**: Profiles, news, explainers, lists, awards, events, advertisements\n\n---\n\n## PHASE 1: Query Generation & Source Mapping\n\nGenerate **100 diverse, targeted search queries** organized by category. For each query, specify:\n1. **Query string** (SEO-optimized)\n2. **Primary sources** (where to find this information)\n3. **Search operators** (site:, filetype:, \"exact phrase\", since:2024)\n4. **Expected result type** (news article, profile, report, social media)\n\n### Categories & Source Guidelines:\n\n#### **A. Mozambican Tech Scene (Queries 1-20)**\n**Trusted Sources:**\n- **Official News**: jornalnoticias.co.mz, clubofmozambique.com, zitamar.com\n- **Regional**: allafrica.com/mozambique/\n- **Government**: inadem.gov.mz, government ministry sites\n- **International Coverage**: bbc.com/news/world/africa, aljazeera.com/africa/\n- **Language**: Portuguese + English\n\n**Query Structure:**\n- Local specificity: \"Maputo\", \"Moçambique\", \"inclusão financeira\"\n- Recent timeframe: since:2024, 2025\n- Examples: `site:clubofmozambique.com startups tecnologia`, `\"fintech Moçambique\" 2025`, `site:allafrica.com/mozambique/ innovation`\n\n#### **B. African Continental Tech (Queries 21-45)**\n**Trusted Sources:**\n- **Pan-African News**: africanews.com, allafrica.com\n- **Regional Coverage**: bbc.com/news/world/africa, aljazeera.com/africa/\n- **Tech Databases**: African Tech Startups database, startup directories\n- **Business**: cnbcafrica.com\n- **Country-Specific**: news24.com (South Africa), thenationonlineng.net (Nigeria), nation.africa (Kenya)\n- **Social**: X/Twitter hashtags (#AfriTech, #TechAfrica)\n\n**Query Structure:**\n- Country-specific: Kenya, Nigeria, South Africa, Rwanda, Uganda, Egypt, Senegal\n- Sectors: fintech, edtech, healthtech, agritech, cleantech\n- Examples: `site:africanews.com technology startups 2025`, `\"Nigerian fintech\" site:allafrica.com`, `site:bbc.com/news/world/africa innovation`\n\n#### **C. Global Tech with African Ties (Queries 46-60)**\n**Trusted Sources:**\n- **International News Agencies**: reuters.com, apnews.com, afp.com\n- **Global Broadcasters**: bbc.com/news, aljazeera.com, dw.com, france24.com\n- **Major Newspapers**: theguardian.com/technology, nytimes.com/technology, washingtonpost.com/technology\n- **Business**: ft.com (Financial Times), economist.com\n- **Tech Coverage**: reuters.com/technology, apnews.com/technology\n- **UN/International**: news.un.org, worldbank.org/en/news\n- **Official**: Company newsrooms (Microsoft, Google, Apple official news pages)\n\n**Query Structure:**\n- Impact angle: \"Africa\", \"emerging markets\", \"Global South\", \"developing nations\"\n- Tech trends: AI, brain-computer interfaces, quantum computing, 5G, blockchain\n- Examples: `site:reuters.com \"artificial intelligence\" Africa investment`, `site:bbc.com/news Microsoft Africa digital`, `site:news.un.org technology Africa 2025`\n\n#### **D. Profiles & Stories (Queries 61-75)**\n**Trusted Sources:**\n- **Professional**: LinkedIn profiles, company websites\n- **Pan-African**: allafrica.com profiles, africanews.com interviews\n- **International Features**: bbc.com/news profiles, aljazeera.com features, theguardian.com Africa\n- **Business**: ft.com entrepreneurs, economist.com Africa business\n- **Interviews**: YouTube channels, podcast platforms\n- **Bios**: Company \"About Us\" pages, university alumni features\n\n**Query Structure:**\n- Name-specific: Full names of known entrepreneurs\n- Role identifiers: \"founder\", \"CEO\", \"entrepreneur\", \"innovator\"\n- Regional: \"Mozambican\", \"African\", country-specific\n- Examples: `\"Mozambican tech entrepreneur\" site:allafrica.com`, `site:linkedin.com/in/ Maputo founder`, `site:bbc.com/news Africa startup founder interview`\n\n#### **E. Events & Awards (Queries 76-85)**\n**Trusted Sources:**\n- **Event Coverage**: reuters.com events, apnews.com, africanews.com\n- **Awards News**: bbc.com/news awards, aljazeera.com recognition\n- **International**: news.un.org events, official event websites\n- **Regional**: allafrica.com conferences, country-specific news sites\n- **Social**: Event hashtags on X/Twitter, LinkedIn event pages\n\n**Query Structure:**\n- Temporal: \"upcoming 2025\", \"October 2025\", \"Q4 2024\"\n- Type: conference, pitch competition, hackathon, awards, summit\n- Examples: `\"African tech conference\" 2025 site:reuters.com`, `site:news.un.org technology awards Africa`, `site:africanews.com innovation summit 2025`\n\n#### **F. Explainers & Trends (Queries 86-95)**\n**Trusted Sources:**\n- **Analysis**: reuters.com analysis, apnews.com explainers, bbc.com/news technology\n- **Deep Dives**: theguardian.com/technology, economist.com technology\n- **International**: dw.com technology, france24.com tech, aljazeera.com technology\n- **Financial**: ft.com tech analysis\n- **Reports**: worldbank.org reports, news.un.org research\n- **Educational**: Official technology organization websites\n\n**Query Structure:**\n- Question format: \"what is\", \"how does\", \"explained\", \"guide to\"\n- Trend focus: AI tools, blockchain, 5G, IoT, quantum computing\n- Regional angle: Africa adoption, emerging markets\n- Examples: `site:bbc.com/news \"artificial intelligence explained\"`, `site:reuters.com \"blockchain Africa\" analysis`, `site:economist.com technology trends 2025`\n\n#### **G. Miscellaneous (Queries 96-100)**\n**Trusted Sources:**\n- **Design Inspiration**: Behance, Dribbble (magazine layouts)\n- **Industry News**: reuters.com media, apnews.com publishing\n- **Mozambican Business**: clubofmozambique.com business directory, local chambers of commerce\n- **Feedback Platforms**: Magazine review sites, reader survey platforms\n- **Publishing Standards**: International journalism organizations\n\n---\n\n## PHASE 2: Query Validation Protocol\n\nBefore executing searches, validate each query:\n\n### Validation Checklist:\n1. **Source Accessibility Test**\n   - Can the search engine access this domain?\n   - Are results indexed and retrievable?\n   - Test query: Execute a simple search on the target site\n   - If blocked: Provide alternative sources from trusted list\n\n2. **Data Freshness Check**\n   - Does the source update regularly?\n   - For Mozambican sources: Are Portuguese results indexed?\n   - Check publication dates in results\n   - Fallback: Use allafrica.com, africanews.com, or bbc.com/news/world/africa for recent updates\n\n3. **Result Relevance Verification**\n   - Execute query and check top 3-5 results\n   - Score relevance: High (directly usable), Medium (needs refinement), Low (reformulate)\n   - If Low: Adjust operators, try synonyms, or switch to alternative trusted source\n\n4. **Regional Accuracy**\n   - Confirm results are Africa/Mozambique-focused, not generic\n   - Check language: Is Portuguese content returning for Mozambican queries?\n   - Verify geographic relevance of sources\n\n5. **Source Credibility Check**\n   - Prioritize: Reuters, AP, AFP, BBC, Al Jazeera, official news agencies\n   - Secondary: Regional trusted sources (AllAfrica, Africanews, Club of Mozambique)\n   - Verify: Company official sites, government sources, UN/World Bank\n   - Avoid: Unverified blogs, unreliable aggregators\n\n### Validation Output Format:\n```\nQuery #: [query string]\nTarget Sources: [list 2-3 specific sites from trusted list]\nSearch Operators: [site:, filetype:, \"quotes\", since:]\nValidation Status: ✅ Accessible | ⚠️ Limited | ❌ Blocked\nAlternative: [if needed, provide trusted alternative]\nExpected Results: [article, profile, PDF report, video, official statement]\nCredibility: [High/Medium - based on source tier]\n```\n\n---\n\n## PHASE 3: Execute & Gather\n\nAfter validation, execute queries and:\n1. **Extract Key Information**: Headlines, dates, names, companies, quotes, statistics\n2. **Verify Sources**: Cross-reference between Reuters/AP/AFP when possible\n3. **Categorize Results**: By magazine section (profiles, news, explainers, events)\n4. **Flag Premium Content**: Exclusive interviews, original research, unique angles\n5. **Note Gaps**: Topics with insufficient results (for manual research or alternative queries)\n6. **Cite Properly**: Always attribute information to specific trusted sources\n\n---\n\n## DELIVERABLE: 100 Validated Search Queries\n\nNow generate the complete list following this structure:\n\n**Query 1-20: Mozambican Tech Scene**\n- Focus: Local startups, fintech, government initiatives, infrastructure\n- Sources: clubofmozambique.com, zitamar.com, allafrica.com/mozambique/, jornalnoticias.co.mz, bbc.com/news/world/africa\n- Language: Portuguese + English\n- Credibility: High (using official Mozambican sources + international coverage)\n\n**Query 21-45: African Continental Tech**\n- Focus: Pan-African startups, funding, sector trends, regional hubs\n- Sources: africanews.com, allafrica.com, reuters.com, bbc.com/news/world/africa, aljazeera.com/africa/, news24.com\n- Credibility: High (international agencies + pan-African aggregators)\n\n**Query 46-60: Global Tech + Africa Impact**\n- Focus: AI, investments, international conferences, multinational projects\n- Sources: reuters.com, apnews.com, bbc.com/news, theguardian.com, ft.com, economist.com, news.un.org\n- Credibility: Highest (tier-1 international news agencies)\n\n**Query 61-75: Profiles & Founder Stories**\n- Focus: Biographies, interviews, success stories, entrepreneur journeys\n- Sources: allafrica.com, bbc.com/news profiles, aljazeera.com features, linkedin.com, theguardian.com, reuters.com profiles\n- Credibility: High (verified through multiple trusted sources)\n\n**Query 76-85: Events & Awards**\n- Focus: Conferences, competitions, recognition, summits, innovation showcases\n- Sources: reuters.com, africanews.com, news.un.org, official event sites, bbc.com/news, aljazeera.com\n- Credibility: High (official announcements + news coverage)\n\n**Query 86-95: Explainers & Trend Lists**\n- Focus: How-to guides, technology primers, trend analysis, top lists\n- Sources: bbc.com/news technology, reuters.com technology, economist.com, theguardian.com/technology, dw.com, france24.com, worldbank.org\n- Credibility: Highest (authoritative analysis from tier-1 sources)\n\n**Query 96-100: Miscellaneous (Design, Business Directory, Standards)**\n- Focus: Magazine design inspiration, local business contacts, publishing standards\n- Sources: Behance, Dribbble, clubofmozambique.com business, reuters.com media industry, journalism organization sites\n- Credibility: Medium-High (industry-specific resources)\n\n---\n\n## SOURCE CREDIBILITY TIERS\n\n**TIER 1 (Highest Credibility):**\n- Reuters, AP, AFP\n- BBC News, Al Jazeera\n- The Guardian, New York Times, Washington Post, Financial Times, The Economist\n- UN News, World Bank\n- Official government sites\n\n**TIER 2 (High Credibility - Regional):**\n- AllAfrica, Africanews\n- Club of Mozambique, Zitamar News\n- Deutsche Welle, France 24, NPR\n- Major national outlets (News24, Daily Nation, etc.)\n\n**TIER 3 (Medium Credibility - Specialized):**\n- Company official newsrooms\n- LinkedIn verified profiles\n- Academic institutions\n- Industry associations\n\n---\n\n**BEGIN QUERY GENERATION WITH VALIDATION TAGS**\n\nOutput format:\n```\nQuery 1: [SEO-optimized search string]\nSources: [2-3 specific sites from trusted list above]\nOperators: [site:, filetype:, \"quotes\", since:]\nValidation: [status]\nCredibility: [Tier level]\nExpected: [result type]\n---\n```\n\n**Generate all 100 queries now, ensuring:**\n- Diversity across topics and regions\n- Prioritization of Tier 1 & 2 sources\n- Portuguese language coverage for Mozambican queries\n- Cross-verification opportunities between sources\n- Balance between local, continental, and global coverage\n- Focussing 70% of the content in Mozambique\n\nYOUR FOCUS IS MOZAMBIQUE",
+        "options": {
+          "systemMessage": "=## Output\nfor all the queries follow this output format:\n- query\n- link\n\nNote:\n First search the internet for content to validate the source of information then get the information.\n the links must be verified by pulling data from them, if you can do it then the link is validated.\n Only real links must be written with the query.\n Focus more in Mozambique then less in Africa and less in the world\n pick the most relevant topics to explore by each region based in SEO\n write the queries based on the whole current year of 2025 or {{ new Date() }}\n Over 70% of the links most be from sources in Mozambique (search in Portuguese) so make sure to dig deep into local news and trusted sources as much as you can\n All the queries must be in portuguese\n Focus MOST in topics of Mozambique \n Don't show your thought process just write the queries\n I want the queries to be most likely to lead to content that can be easily foud specially in Mozambique (where content is hard to find), so generate lead search queries\nThe queries from Mozambique must be able to easily find content at all costs"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1504,
+        4400
+      ],
+      "id": "eec05c33-c774-46e1-9a45-f373f87c3743",
+      "name": "AI Agent3"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1504,
+        4608
+      ],
+      "id": "e2184d76-43a5-487a-bca5-77dbaa191897",
+      "name": "Google Gemini Chat Model4"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1872,
+        4608
+      ],
+      "id": "d8fb49df-4052-4f74-bdbf-11a62f7f4dce",
+      "name": "Google Gemini Chat Model5"
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.output }}",
+        "attributes": {
+          "attributes": [
+            {
+              "name": "query 1",
+              "description": "query 1 information"
+            },
+            {
+              "name": "query 2",
+              "description": "query 2 information"
+            },
+            {
+              "name": "query 3",
+              "description": "query 3 information"
+            },
+            {
+              "name": "query 4",
+              "description": "query 4 information"
+            },
+            {
+              "name": "query 5",
+              "description": "query 5 information"
+            },
+            {
+              "name": "query 6",
+              "description": "query 6 information"
+            },
+            {
+              "name": "query 7",
+              "description": "query 7 information"
+            },
+            {
+              "name": "query 8",
+              "description": "query 8 information"
+            },
+            {
+              "name": "query 9",
+              "description": "query 9 information"
+            },
+            {
+              "name": "query 10",
+              "description": "query 10 information"
+            },
+            {
+              "name": "query 11",
+              "description": "query 11 information"
+            },
+            {
+              "name": "query 12",
+              "description": "query 12 information"
+            },
+            {
+              "name": "query 13",
+              "description": "query 13 information"
+            },
+            {
+              "name": "query 14",
+              "description": "query 14 information"
+            },
+            {
+              "name": "query 15",
+              "description": "query 15 information"
+            },
+            {
+              "name": "query 16",
+              "description": "query 16 information"
+            },
+            {
+              "name": "query 17",
+              "description": "query 17 information"
+            },
+            {
+              "name": "query 18",
+              "description": "query 18 information"
+            },
+            {
+              "name": "query 19",
+              "description": "query 19 information"
+            },
+            {
+              "name": "query 20",
+              "description": "query 20 information"
+            },
+            {
+              "name": "query 21",
+              "description": "query 21 information"
+            },
+            {
+              "name": "query 22",
+              "description": "query 22 information"
+            },
+            {
+              "name": "query 23",
+              "description": "query 23 information"
+            },
+            {
+              "name": "query 24",
+              "description": "query 24 information"
+            },
+            {
+              "name": "query 25",
+              "description": "query 25 information"
+            },
+            {
+              "name": "query 26",
+              "description": "query 26 information"
+            },
+            {
+              "name": "query 27",
+              "description": "query 27 information"
+            },
+            {
+              "name": "query 28",
+              "description": "query 28 information"
+            },
+            {
+              "name": "query 29",
+              "description": "query 29 information"
+            },
+            {
+              "name": "query 30",
+              "description": "query 30 information"
+            },
+            {
+              "name": "query 31",
+              "description": "query 31 information"
+            },
+            {
+              "name": "query 32",
+              "description": "query 32 information"
+            },
+            {
+              "name": "query 33",
+              "description": "query 33 information"
+            },
+            {
+              "name": "query 34",
+              "description": "query 34 information"
+            },
+            {
+              "name": "query 35",
+              "description": "query 35 information"
+            },
+            {
+              "name": "query 36",
+              "description": "query 36 information"
+            },
+            {
+              "name": "query 37",
+              "description": "query 37 information"
+            },
+            {
+              "name": "query 38",
+              "description": "query 38 information"
+            },
+            {
+              "name": "query 39",
+              "description": "query 39 information"
+            },
+            {
+              "name": "query 40",
+              "description": "query 40 information"
+            },
+            {
+              "name": "query 41",
+              "description": "query 41 information"
+            },
+            {
+              "name": "query 42",
+              "description": "query 42 information"
+            },
+            {
+              "name": "query 43",
+              "description": "query 43 information"
+            },
+            {
+              "name": "query 44",
+              "description": "query 44 information"
+            },
+            {
+              "name": "query 45",
+              "description": "query 45 information"
+            },
+            {
+              "name": "query 46",
+              "description": "query 46 information"
+            },
+            {
+              "name": "query 47",
+              "description": "query 47 information"
+            },
+            {
+              "name": "query 48",
+              "description": "query 48 information"
+            },
+            {
+              "name": "query 49",
+              "description": "query 49 information"
+            },
+            {
+              "name": "query 50",
+              "description": "query 50 information"
+            },
+            {
+              "name": "query 51",
+              "description": "query 51 information"
+            },
+            {
+              "name": "query 52",
+              "description": "query 52 information"
+            },
+            {
+              "name": "query 53",
+              "description": "query 53 information"
+            },
+            {
+              "name": "query 54",
+              "description": "query 54 information"
+            },
+            {
+              "name": "query 55",
+              "description": "query 55 information"
+            },
+            {
+              "name": "query 56",
+              "description": "query 56 information"
+            },
+            {
+              "name": "query 57",
+              "description": "query 57 information"
+            },
+            {
+              "name": "query 58",
+              "description": "query 58 information"
+            },
+            {
+              "name": "query 59",
+              "description": "query 59 information"
+            },
+            {
+              "name": "query 60",
+              "description": "query 60 information"
+            },
+            {
+              "name": "query 61",
+              "description": "query 61 information"
+            },
+            {
+              "name": "query 62",
+              "description": "query 62 information"
+            },
+            {
+              "name": "query 63",
+              "description": "query 63 information"
+            },
+            {
+              "name": "query 64",
+              "description": "query 64 information"
+            },
+            {
+              "name": "query 65",
+              "description": "query 65 information"
+            },
+            {
+              "name": "query 66",
+              "description": "query 66 information"
+            },
+            {
+              "name": "query 67",
+              "description": "query 67 information"
+            },
+            {
+              "name": "query 68",
+              "description": "query 68 information"
+            },
+            {
+              "name": "query 69",
+              "description": "query 69 information"
+            },
+            {
+              "name": "query 70",
+              "description": "query 70 information"
+            },
+            {
+              "name": "query 71",
+              "description": "query 71 information"
+            },
+            {
+              "name": "query 72",
+              "description": "query 72 information"
+            },
+            {
+              "name": "query 73",
+              "description": "query 73 information"
+            },
+            {
+              "name": "query 74",
+              "description": "query 74 information"
+            },
+            {
+              "name": "query 75",
+              "description": "query 75 information"
+            },
+            {
+              "name": "query 76",
+              "description": "query 76 information"
+            },
+            {
+              "name": "query 77",
+              "description": "query 77 information"
+            },
+            {
+              "name": "query 78",
+              "description": "query 78 information"
+            },
+            {
+              "name": "query 79",
+              "description": "query 79 information"
+            },
+            {
+              "name": "query 80",
+              "description": "query 80 information"
+            },
+            {
+              "name": "query 81",
+              "description": "query 81 information"
+            },
+            {
+              "name": "query 82",
+              "description": "query 82 information"
+            },
+            {
+              "name": "query 83",
+              "description": "query 83 information"
+            },
+            {
+              "name": "query 84",
+              "description": "query 84 information"
+            },
+            {
+              "name": "query 85",
+              "description": "query 85 information"
+            },
+            {
+              "name": "query 86",
+              "description": "query 86 information"
+            },
+            {
+              "name": "query 87",
+              "description": "query 87 information"
+            },
+            {
+              "name": "query 88",
+              "description": "query 88 information"
+            },
+            {
+              "name": "query 89",
+              "description": "query 89 information"
+            },
+            {
+              "name": "query 90",
+              "description": "query 90 information"
+            },
+            {
+              "name": "query 91",
+              "description": "query 91 information"
+            },
+            {
+              "name": "query 92",
+              "description": "query 92 information"
+            },
+            {
+              "name": "query 93",
+              "description": "query 93 information"
+            },
+            {
+              "name": "query 94",
+              "description": "query 94 information"
+            },
+            {
+              "name": "query 95",
+              "description": "query 95 information"
+            },
+            {
+              "name": "query 96",
+              "description": "query 96 information"
+            },
+            {
+              "name": "query 97",
+              "description": "query 97 information"
+            },
+            {
+              "name": "query 98",
+              "description": "query 98 information"
+            },
+            {
+              "name": "query 99",
+              "description": "query 99 information"
+            },
+            {
+              "name": "query 100",
+              "description": "query 100 information"
+            }
+          ]
+        },
+        "options": {
+          "systemPromptTemplate": "=You are an expert extraction algorithm.\nOnly extract relevant information from the text.\nIf you do not know the value of an attribute asked to extract, you may omit the attribute's value.\n\nI want You to extract each query individually and separate them\nOnly get content from the year {{ new Date() }}\nAvoid creating content from {{ $json.output }}\nAvoid searching from the site https://kabum.digital/\nExtract all of the 100 queries\nNote that over 70 queries must be mozambican and all of them must return results from the internet\nMozambique content is your priority\nMake sure to edit the queries if necesnecessary ensure that absolutely all of them deliver results from the internet the region you are searching from is Mozambique\n\n## Output:\n follow this order for the output:\n - query\n - link of the websites where to find the info\n\n Example:\n - <query_string>: <site_to_find_the_information>"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        1872,
+        4400
+      ],
+      "id": "e5b2f6fc-13a0-42cf-a3ad-b8219bb4d164",
+      "name": "Information Extractor2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=# Kabum Digital Magazine - AI Content Creation Agent Prompt\n\nYou are a content creator for **Kabum Digital**, a technology magazine focused on Mozambican, African, and international technology news. Your role is to create compelling, well-researched articles based on verified technology stories.\n\n## Magazine Focus Areas\n\n**NACIONAL**: Mozambican technology news, innovations, startups, government digital initiatives\n**ÁFRICA**: African tech leaders, innovations, policies, and success stories  \n**INTERNACIONAL**: Global technology trends relevant to African audiences\n\n---\n\n## ⚠️ CRITICAL: Understanding Your Two Inputs\n\nYou will receive TWO separate pieces of data with COMPLETELY DIFFERENT purposes:\n\n### INPUT 1: Structure & Style Reference (TEMPLATE ONLY, JUST ANALYZE THE CONTENT TO SEE THE STRUCTURE AND MAKE SURE YOU DONT WRITE ANYTHING COMING FROM THIS IN THE NEW CONTENT)\n**`{{ $('Extract Magazine Data').item.json.title_with_associated_content }}`**\n\n**PURPOSE**: This is ONLY a formatting and style guide\n**USE FOR**: \n- ✅ Understanding the writing style and tone\n- ✅ Seeing how articles should be structured\n- ✅ Learning the formatting patterns (headers, paragraphs, emphasis)\n- ✅ Observing category organization (Nacional/África/Internacional)\n- ✅ Understanding how titles and subtitles are crafted\n- ✅ Seeing the level of detail and depth expected\n\n**DO NOT USE FOR**:\n- ❌ Actual article topics or subjects\n- ❌ Specific company names, products, or people\n- ❌ Facts, statistics, or data points\n- ❌ Story content or narratives\n- ❌ Quotes or statements\n\n**THINK OF IT AS**: A blank template or style guide - you're copying the FORMAT, not the CONTENT\n\n---\n\n### INPUT 2: Content Source (YOUR ACTUAL MATERIAL, ONLY USE THIS MATERIAL FOR THE CONTENT AND DISREGARD THE REST CONTENT)\n**`{{ $json.results }}`**\n\n**PURPOSE**: This contains ALL the actual information you will write about\n**USE FOR**: \n- ✅ All article topics and subjects\n- ✅ Every fact, statistic, and data point\n- ✅ All company names, products, and people\n- ✅ Quotes and statements\n- ✅ Dates, locations, and events\n- ✅ Technical details and specifications\n\n**DO NOT USE FOR**:\n- ❌ Determining writing style (that's from the reference)\n- ❌ Understanding structure (that's from the reference)\n\n**THINK OF IT AS**: Your raw material - this is WHAT you write about\n\n---\n\n## 🔴 ABSOLUTE RULE: Content Separation\n\n### When analyzing `{{ $('Extract Magazine Data').item.json.title_with_associated_content }}`:\n\n**EXTRACT ONLY THESE ELEMENTS**:\n1. **Structural patterns**: How many paragraphs? What's the flow?\n2. **Tone characteristics**: Is it formal? Conversational? Technical?\n3. **Formatting style**: How are titles formatted? Where are subheadings placed?\n4. **Category organization**: How is Nacional/África/Internacional structured?\n5. **Writing techniques**: How does it hook readers? How does it explain technical concepts?\n6. **Length and depth**: How detailed are explanations?\n\n**COMPLETELY IGNORE THESE ELEMENTS**:\n1. ❌ The specific technology being discussed\n2. ❌ Company names mentioned\n3. ❌ Product names or services\n4. ❌ People's names and titles\n5. ❌ Specific facts, numbers, or statistics\n6. ❌ Dates and locations\n7. ❌ Any actual story content\n\n### When analyzing `{{ $json.results }}`:\n\n**USE EVERYTHING**:\n1. ✅ Every topic and story\n2. ✅ All facts and data\n3. ✅ All names and entities\n4. ✅ All quotes and statements\n5. ✅ All technical information\n6. ✅ All context and background\n\n---\n\n## Process: How to Use Both Inputs\n\n### STEP 1: Analyze Reference for STYLE ONLY\n\n```\nInput: {{ $('Extract Magazine Data').item.json.title_with_associated_content }}\n\nQuestions to ask:\n- How long are the opening paragraphs?\n- What tone does the writer use? (enthusiastic? serious? conversational?)\n- How are technical terms explained?\n- How are articles structured? (lead → context → details → conclusion?)\n- How are categories organized?\n- What's the formatting pattern? (bold text? subheadings? bullet points?)\n\nDO NOT ask:\n- What companies are mentioned? (IGNORE THIS)\n- What products are discussed? (IGNORE THIS)\n- What are the facts/stats? (IGNORE THIS)\n```\n\n### STEP 2: Extract Content from Search Results\n\n```\nInput: {{ $json.results }}\n\nExtract:\n- What are the actual technology stories?\n- What companies/products are involved?\n- What are the facts and statistics?\n- Who said what? (quotes)\n- When and where did this happen?\n- What are the technical details?\n\nResult: A list of real stories with real facts to write about\n```\n\n### STEP 3: Apply Reference Style to Search Content\n\n```\nFor each story from {{ $json.results }}:\n1. Take the FACTS from search results\n2. Write them using the STYLE from reference\n3. Structure them following the PATTERN from reference\n4. Format them matching the FORMATTING from reference\n\nExample:\n- Search result says: \"Company X launched product Y in country Z\"\n- Reference shows: Engaging tone, 3-paragraph structure, bold key terms\n- You write: Use that fact, apply that style, follow that structure\n```\n\n---\n\n## Detailed Writing Instructions\n\n### Article Structure (From Reference)\n\nAnalyze the reference to understand:\n- How does the first paragraph hook readers?\n- How many paragraphs are in each section?\n- Where are subheadings placed?\n- How is the conclusion structured?\n\nThen apply this EXACT structure to your search result content.\n\n### Tone Matching (From Reference)\n\nAnalyze the reference to understand:\n- Is it enthusiastic or measured?\n- Does it use rhetorical questions?\n- How does it address the reader?\n- What's the energy level?\n\nThen write your search result content with this EXACT tone.\n\n### Formatting Replication (From Reference)\n\nAnalyze the reference to understand:\n- When are words bolded?\n- How are quotes formatted?\n- Where are bullet points used?\n- How are numbers presented?\n\nThen format your search result content EXACTLY like this.\n\n### Category Organization (From Reference)\n\nAnalyze the reference to understand:\n- How are Nacional/África/Internacional organized?\n- What subcategories exist?\n- How are articles ordered?\n- What metadata is included?\n\nThen organize your search result content in this EXACT structure.\n\n---\n\n## Quality Control Checklist\n\n### ✅ Structure Compliance Check\n- [ ] Article structure matches reference pattern (not reference content)\n- [ ] Tone matches reference examples\n- [ ] Formatting follows reference style\n- [ ] Categories organized like reference\n- [ ] Length and depth similar to reference\n\n### ✅ Content Verification Check\n- [ ] ALL topics are from `{{ $json.results }}` \n- [ ] ALL facts are from `{{ $json.results }}`\n- [ ] ALL names are from `{{ $json.results }}`\n- [ ] ALL dates are from `{{ $json.results }}`\n- [ ] ALL quotes are from `{{ $json.results }}`\n- [ ] ZERO content borrowed from reference example\n\n### 🚫 Red Flag Check\nAsk yourself:\n- \"Did I use any company name from the reference?\" → If YES, DELETE IT\n- \"Did I use any fact from the reference?\" → If YES, DELETE IT\n- \"Did I use any topic from the reference?\" → If YES, DELETE IT\n- \"Is everything I wrote based on search results?\" → Must be YES\n\n---\n\n## Example Transformation Process\n\n### ❌ WRONG APPROACH:\n```\nReference mentions: \"M-Pesa launched Txova service\"\nSearch results mention: \"Shopify expands to Africa\"\n\nWrong output: Article about M-Pesa and Txova\nWhy wrong: You used content from reference, not search results\n```\n\n### ✅ CORRECT APPROACH:\n```\nReference shows: Engaging lead, 3-paragraph intro, bold key terms, enthusiastic tone\nSearch results mention: \"Shopify expands to Africa\"\n\nCorrect output: Article about Shopify's African expansion, written with:\n- The engaging lead style from reference\n- The 3-paragraph intro structure from reference  \n- Bold key terms like reference uses\n- The enthusiastic tone from reference\n- But 100% facts from search results\n```\n\n---\n\n## Output Format\n\nYour final output must:\n\n1. **Match the structure** shown in `{{ $('Extract Magazine Data').item.json.title_with_associated_content }}`\n2. **Contain only content** from `{{ $json.results }}`\n3. **Use the tone and style** demonstrated in the reference\n4. **Follow the formatting patterns** from the reference\n\n```json\n{\n  \"magazine_content\": {\n    \"nacional\": [\n      {\n        \"title\": \"[Topic from search results, styled like reference]\",\n        \"subtitle\": \"[From search results, tone from reference]\",\n        \"content\": \"[Facts from search results, structure from reference]\",\n        \"metadata\": {\n          \"category\": \"Nacional\",\n          \"author\": \"Redação Kabum Digital\",\n          \"date\": \"[Current date]\"\n        }\n      }\n    ],\n    \"africa\": [],\n    \"internacional\": []\n  }\n}\n```\n\n---\n\n## 🔴 FINAL CRITICAL REMINDERS\n\n### About the Reference (`{{ $('Extract Magazine Data').item.json.title_with_associated_content }}`):\n- **It is a STYLE GUIDE, not a content source**\n- **Analyze it for HOW to write, not WHAT to write**\n- **Copy its structure, tone, and formatting**\n- **Ignore its topics, facts, and specific content completely**\n- **Think of it as a blank template with styling instructions**\n\n### About Search Results (`{{ $json.results }}`):\n- **This is your ONLY content source**\n- **Every topic must come from here**\n- **Every fact must come from here**\n- **Every name must come from here**\n- **If it's not in search results, don't write about it**\n\n### The Correct Mental Model:\n```\nReference = HOW to cook (recipe format, cooking technique)\nSearch Results = WHAT to cook (actual ingredients)\n\nYou wouldn't use the ingredients from a recipe example \nwhen you have your own ingredients to work with!\n```\n\n---\n\n## Ready to Begin?\n\nWhen you receive both inputs:\n\n1. **First**: Study the reference ONLY for style, structure, tone, and formatting\n   - Mentally note: \"Articles start with 2-3 sentence hooks\"\n   - Mentally note: \"Tone is enthusiastic and accessible\"\n   - Mentally note: \"Key terms are bolded on first use\"\n   - **DO NOT** note: \"Article is about X company or Y product\"\n\n2. **Second**: Read search results for ALL actual content\n   - Extract every story, fact, and detail\n   - This is what you will write about\n\n3. **Third**: Write articles that combine:\n   - Structure/style from reference + Content from search results\n   \n4. **Output**: Complete magazine content with NO reference content, only reference structure\n\n**Deliver the final magazine content directly. No thought process commentary.**\n\n** Note: **\n Avoid typos\n If you see any symbol that should be formatted using utf8 encoding, format it\n Make sure to not leave any gaps in the content use all the information you have at your disposal from the search results from {{ $json.results }} to not leave anything pendent\n For each topic researched I want you to put a link for the site where it was taken from, to ensure that the content is legitimate, so dont force the content to follow exactly the structure given to you in a way that modifies the original content from {{ $json.results }}, for each topic get the links from the {{ $json.results }} where you got the content\n\n** Important (follow at all costs): **\n Only use content from the current year {{ new Date() }}\n Only use content from {{ $json.results }}\n Create a fundamentally new article\n dont use Any words from {{ $('Extract Magazine Data').item.json.title_with_associated_content }} except for the ones that repeat themselves in most of the Magazines\n If you dont find a link to the source of information, don't write about the topic, just skip that one and move to the next, if you find a link write it, for me to confirm the source of information\n Do not generate links, just write the ones you find in the source of you information got in this prompt\n For each topic written, write a kink to the source of information for it bellow the content of the topic\n When writing the links get the url from the {{ $json.results }}, e.g. {{ $json.results[0].url }}\n When getting the content as well, e.g. {{ $json.results[0].raw_content }}, as well for the other information necessary\n Note that the \"e.g.\" is just for demonstarion purposes the information is all available in {{ $json.results }} make sure to match everything down the topics, the contents, and the links\n Note: DO NOT CREATE FAKE LINKS, DO NOT CREATE LINKS AT ALL, COPY AND PASTE THE EXISTING LINKS WITHOUT EDITING ANYTHING IN THEM, MAKE SURE THERE ARE LINKS TO THE INFORMATION EXTRACTING THE URLS FROM THE LIST OF ITEMS {{ $json.results }},\nIF YOU SEE YOURSELF CREATING FAKE LINKS STOP AND RETHINK YOUR PROCESS READING ALL THE INSTRUCTIONS AND THE SOURCES OF INFORMATION AGAIN GETTING THE URL LINK FROM {{ $json.results }} IN THE SPECIFIC ITEM LOCATION YOU GOT THE INFORMATION FROM\nPUT THE URL ONLY IN THE END OF EACH TOPIC IN THE TEXT\nDO NOT REPEAT URLs\n MAKE SURE TO NOT REPEAT THE TOPICS EVEN IF THEY ARE WRITTEN IN DIFFERENT WAYS\n FOCUS MORE IN THE CONTENT OF MOZAMBIQUE 70% OF THE MAGAZINE SHOULD BE MOZAMBIQUE RELATED TOPICS\n CLASSIFY THE TOPICS BY REGION: NACIONAL (FOR MOZAMBIQUE), REGIONAL (FOR AFRICA) AND INTERNACIONAL (FOR THE WORLD)\n YOUR FOCUS IS MOZAMBIQUE RELATED CONTENT, SEARCH ALL THE RESULTS UNTIL YOU FIND IT\n Mozambique content must be present and cover 70% of the content, make sure of that",
+        "options": {
+          "systemMessage": "=##Output\n\nThis template is designed to replicate the exact structure, formatting, style, and content flow of the provided Kabum Digital magazine. Follow it strictly without deviations: use the same section order, page numbering conventions (e.g., starting from 01, with some duplicates or errors preserved in style), typo-prone phrasing (e.g., \"Tecnologial\" for \"Tecnologia\"), interspersed advertisements (marked as \"PUBLICIDADE\"), repeated elements (e.g., slogans, contacts), and article formats (including quotes, side notes, and overlaps). Replace placeholders in [brackets] with your custom content, but maintain the exact layout, including line breaks, capitalization, and punctuation. The template assumes a digital/print hybrid format with implied pages. Do not add, remove, or reorder sections. Aim for ~45 implied pages.\n1. Magazine Header and Cover Elements\n[Edition Number]ª Edição [Month] de [Year]\n[Number] [Featured Highlight, e.g., InovaCOes do Event]\n[Main Title/Theme, e.g., O Big Bang da Tecnologial]\nQuem Somos?\n[Magazine Name] é uma revista [country adjective, e.g., moçambi cana] que se dedica a produção de con teúdos ligados à área da tecnologia, explorando os últimos acontecimentos locais e internacionais através da notícia, reportagem e entrevistas.\nFIQUE POR\nDENTRO\nDA TECNOLOGIA!\nwww.[website].digital             @[social handle].digital\n[Page Indicator, e.g., 01]\n[Main Title/Theme, e.g., O Big Bang da Tecnologial]\n2. Table of Contents (Índice)\nÍndice\n[Article Title 1]\n[Article Title 2]\n[Article Title 3]\n...\n[Continue listing all article titles with page numbers, including duplicates or errors, e.g., 05, 09, 11, ..., 34, 37]\n[Last Article Title]\n[Page Indicator, e.g., 02]\nPUBLICIDADE\n[Ad Title, e.g., Só há uma forma de se tornar num UI/UX World-Class Designer,]\n[Ad Description]\n[Link or Call to Action]\n[Teaser Title, e.g., José Samo Gudo ajuda Moçambique a alcançar a inclusão •nanceira]\nLeia o artigo na página a seguir\n[Page Indicator, e.g., 04]\n3. Main Articles\nArticle Format Guidelines (Apply to Each):\n\nStart with introductory paragraph(s).\nInclude quotes in boxed or indented format.\nAdd achievements, background, education, affiliations.\nIntersperse with side notes or overlapping content from other articles (e.g., brief mentions of unrelated people).\nEnd with \"PUBLICIDADE\" and an ad.\nUse page indicators at the bottom or start of continuations (e.g., 05, 06).\nPreserve typos (e.g., \"•nanceira\" for \"financeira\", repeated sentences).\n\n[Article 1 Title, e.g., [Person] ajuda [Country] a alcançar a inclusão financeira]\n[Intro Paragraph: Context on sector growth.]\n[Person Description.]\n[Startup Description.]\n\"[Quote from Person]\"\n[Person Name]\nPUBLICIDADE\n[Page Indicator]\n[Continuation: Achievements, events, other ventures.]\n[Background and Education.]\n[Affiliations.]\nMais informações:\n[Contact Info]\n[Ad Slogan]\n[Ad Description]\n[Website and Call to Action]\nPUBLICIDADE\n[Article 2 Title, e.g., [Person] e a lideranca de sucesso de uma maiores das empresas de tecnologia]\n[Profile Description.]\n[Page Indicator]\n[Responsibilities.]\n[Previous Roles and Awards.]\n[Education.]\n[Side Note: Brief unrelated profile, e.g., another person's bio.]\n[More Side Notes if needed.]\n[Article 3 Title, e.g., [Person] O USO DE [Topic] PARA TRANSFORMAÇÃO ORGANIZACIONAL]\n“[Self-Description Quote]”\n[Experience Summary.]\n[Page Indicator]\n[Current Role and Approach.]\n[Certifications.]\n[Previous Roles.]\nPUBLICIDADE\n[Page Indicator]\n[Article 4 Title, e.g., Energia Renovável Para [Country]: A história de [Persons]]\n[Story Introduction.]\n[Page Indicator]\n[Journey and Challenges.]\n\"[Quote from Person]\"\n[Person Name]\n[Company Goals.]\n[Page Indicator]\n����[Main Title/Theme] [Page]\nPUBLICIDADE\n[PSA Ad, e.g., PROIBIDA A VENDA E CONSUMO DE BEBIDAS ALCOÓLICAS...]\n[Article 5 Title, e.g., [Studio Name]: PROMOVENDO A EXCELÊNCIA ARTÍSTICA [Country Adjective]]\n[Description.]\n[Page Indicator]\n[Founder Story.]\n[Services and Growth.]\n[Personal Passion.]\nPUBLICIDADE\n[Article 6 Title, e.g., Jovens criam \"[App Name]\" para admissão aos exames]\nLeia o artigo na página a seguir\n[Context on Sector.]\n[Platform Description.]\nPUBLICIDADE\n[Ad, e.g., RUCA]\n[Continuation: Launch Success, Mission, Team.]\nA seguir\n[Ad Continuation.]\n[Article 7 Title, e.g., [Company] aposta em [Person] para liderança digital]\n[Announcement.]\n[Role Responsibilities.]\n[Announcement Repetition.]\n[Page Indicator]\n[Profile.]\n[Previous Roles.]\n[Education.]\n[Ventures.]\nPUBLICIDADE PUBLICIDADE\n[Article 8 Title, e.g., [Country] dá um passo à frente na gestão de dados com nova central]\n[Quote from Official.]\n[Page Indicator]\n\"[Additional Quote]\"\n[More Details.]\nPUBLICIDADE\n[Ad with Color Codes, e.g., C M Y CM...]\n[Article 9 Title, e.g., Microsoft pretende apostar [Amount] de dólares no [Product]]\n[News Summary.]\n[Details.]\n[Page Indicator]\nPUBLICIDADE\n[Ad, e.g., Kudziva]\n[Article 10 Title, e.g., Advogado-Robot vai defender um \"criminoso\" em Tribunal]\n[News Details.]\n[Page Indicator]\n\"[Quote]\"\n[Tech Explanation.]\n[Concerns and Similar Projects.]\nPUBLICIDADE\n[Article 11 Title, e.g., [Persons] investem em startup que “[Action]” pensamento]\n[Investment Details.]\n[Page Indicator]\n[Company Goals.]\n[Article 12 Title, e.g., [Person Nationality] [Person] eleita heroína do ano [Year] da CNN]\n[Award Details.]\n[Organization Description.]\n[Page Indicator]\n[Background.]\n[Quote.]\n[Current Impact.]\n[Article 13 Title, e.g., [Product]: O que é o [Type] da [Company] e para que serve?]\n[Description.]\n[Page Indicator]\n[Uses.]\n[Company Background.]\n[Updates and Safety.]\n[Article 14 Title, e.g., [Number] projectos futuristas e impressionantes da [Event]]\n[Event Overview.]\n[List Projects Numbered:]\n\n\n...\n[History.]\n[Page Indicators Interspersed.]\nPUBLICIDADE\n\n[Article 15 Title, e.g., [Number] startups africanas selecionadas para [Fund]]\n[Announcement.]\n[Details.]\n[Quote.]\n[List of Startups.]\n[Page Indicator]\nPUBLICIDADE\nFEEDBACK\nDA MALTA\nveja o que dizem sobre nós e pode também deixar o seu feedback nas nossas redes sociais\n[Name]\n[Feedback Quote.]\n[Repeat for 5 Feedbacks.]\nFIQUE POR DENTRO DA TECNOLOGIA!\nwww.[website].digital             @[social handle].digital\n[Article 16 Title, e.g., [Company] amplia presença na África com [Amount] de dólares]\n[Funding Details.]\n[Quote.]\n[Platform Description.]\n[Page Indicator]\n[Use of Funds.]\n[Article 17 Title, e.g., Apple prepara [Product] com telas sensIveis ao toque]\n[Plans.]\n[Shift Explanation.]\n[Article 18 Title, e.g., [Person] PREMIADA COMO INOVADORA DO ANO [Year] EM [Country]]\n[Profile.]\n[Page Indicator]\n[Startup Description.]\n[Competition Details.]\n[Quote.]\n[Ad, e.g., Está a procura de uma casa para ARRENDAR?]\nPUBLICIDADE\n4. Preview Section (PREVISÃO)\nPREVISÃO\nO que vai poder ler este mês no site www.[website].digital\n[Group Number, e.g., 01]\n[List Upcoming Articles.]\n[Repeat for Groups 02-04.]\n5. Closing Slogan and Contact\nFIQUE POR\nDENTRO DA\nTECNOLOGIA!\nwww.[website].digital\n@[social handle].digital\n\n** Note\n the e.g. are only for demonstration purposes. Do not use them to write the next atricle"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        2496,
+        4400
+      ],
+      "id": "b5137bf6-691c-4243-8719-c9236601d89f",
+      "name": "AI Agent4"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2496,
+        4592
+      ],
+      "id": "f0d548d8-2abc-45e6-bf6a-bbf9d936cd87",
+      "name": "Google Gemini Chat Model6"
+    },
+    {
+      "parameters": {
+        "name": "Nova revista",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1L0uapR5PLqI5yOsj0fXw2J3iXJI3Uy8b",
+          "mode": "list",
+          "cachedResultName": "Novas revistas kabumm",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1L0uapR5PLqI5yOsj0fXw2J3iXJI3Uy8b"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3344,
+        4592
+      ],
+      "id": "7d798e74-a600-4577-8a6c-f64b18fe640d",
+      "name": "Upload file2"
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "output",
+        "options": {
+          "encoding": "utf16"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        3088,
+        4400
+      ],
+      "id": "6d86d651-68ff-4a39-9eb3-f5730e64fc37",
+      "name": "Convert to File2"
+    },
+    {
+      "parameters": {
+        "sendTo": "akilhassane86@gmail.com",
+        "subject": "Hello",
+        "message": "=Here is your daily article\n\nSent to you by Howard",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {}
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3344,
+        4400
+      ],
+      "id": "5061ace2-d623-4a3e-9f5f-be34b47c63e0",
+      "name": "Send a message2",
+      "webhookId": "88712f30-7cf8-46c2-add1-c49a74654de0"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 1'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 2'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 3'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 4'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 5'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 6'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 7'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 8'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 9'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 10'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 11'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 12'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 13'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 14'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 15'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 16'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 17'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 18'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 19'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 20'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 21'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 22'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 23'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 24'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 25'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 26'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 27'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 28'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 29'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 30'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 31'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 32'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 33'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 34'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 35'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 36'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 37'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 38'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 39'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 40'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 41'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 42'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 43'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 44'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 45'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 46'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 47'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 48'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 49'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 50'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 51'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 52'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 53'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 54'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 55'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 56'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 57'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 58'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 59'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 60'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 61'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 62'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 63'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 64'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 65'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 66'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 67'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 68'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 69'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 70'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 71'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 72'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 73'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 74'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 75'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 76'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 77'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 78'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 79'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 80'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 81'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 82'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 83'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 84'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 85'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 86'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 87'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 88'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 89'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 90'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 91'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 92'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 93'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 94'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 95'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 96'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 97'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 98'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 99'] }}"
+            },
+            {
+              "name": "query",
+              "value": "={{ $json.output['query 100'] }}"
+            },
+            {
+              "name": "include_raw_content",
+              "value": "={{ true }}"
+            },
+            {
+              "name": "max_results",
+              "value": "100"
+            },
+            {
+              "name": "=auto_parameters",
+              "value": "={{  false }}"
+            },
+            {
+              "name": "=search_depth",
+              "value": "={{ \"advanced\" }}"
+            },
+            {
+              "name": "topic",
+              "value": "={{ \"news\" }}"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2256,
+        4400
+      ],
+      "id": "5a6eaf5d-71a6-44c7-af82-9186b701f473",
+      "name": "HTTP Request1",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add 'title' and 'content' fields to the JSON of each one\nfor (const item of $input.all()) {\n  let title = '';\n  let content = '';\n  \n  // Check all fields to find the one with HTML\n  let sourceText = item.json.output || \n                   item.json.cleanedText || \n                   item.json.html || \n                   item.json.content ||\n                   item.json.body || \n                   item.json.text || '';\n  \n  // Extract title from <h1 class=\"entry-title\">TEXT</h1>\n  // This regex handles escaped quotes, regular quotes, and any attributes\n  const titleRegex = /<h1\\s+class=[\"\\\\]?entry-title[\"\\\\]?[^>]*>(.*?)<\\/h1>/s;\n  const titleMatch = sourceText.match(titleRegex);\n  \n  if (titleMatch && titleMatch[1]) {\n    // Get the title text, remove any HTML tags, and unescape\n    title = titleMatch[1]\n      .replace(/<[^>]*>/g, '') // Remove any HTML tags inside\n      .replace(/\\\\\"/g, '\"')     // Unescape quotes\n      .replace(/&quot;/g, '\"')  // Decode HTML entities\n      .trim();\n    \n    // Remove the entire <h1> block from content\n    content = sourceText.replace(titleMatch[0], '').trim();\n  } else {\n    // If no <h1> found, use the whole text as content\n    content = sourceText;\n  }\n\n  // Clean up excessive whitespace\n  content = content.replace(/\\n\\s*\\n+/g, '\\n').trim();\n\n  // Add the new fields\n  item.json.title = title;\n  item.json.content = content;\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        1568
+      ],
+      "id": "085fb2e4-7230-4447-a3aa-19ae3fc8633c",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "limit": 1,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1lET2x3BGK2_aXvYMkXnHgdFDp5_5NyBL",
+            "mode": "list",
+            "cachedResultName": "kabum imagens",
+            "cachedResultUrl": "https://drive.google.com/drive/folders/1lET2x3BGK2_aXvYMkXnHgdFDp5_5NyBL"
+          },
+          "whatToSearch": "files"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2288,
+        1568
+      ],
+      "id": "78914c87-f817-4c20-bd8d-68a6d76020fa",
+      "name": "Search files and folders",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "B1BJBJ4kfTVSf1cV",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2496,
+        1568
+      ],
+      "id": "976b9077-902a-4ee9-abc3-1017d43a7c9c",
+      "name": "Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "B1BJBJ4kfTVSf1cV",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "resize",
+        "width": 1700,
+        "height": 700,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        2912,
+        1568
+      ],
+      "id": "3567632e-bca1-41ec-8a3a-1c545abb4b22",
+      "name": "Edit Image"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://automation434.wpcomstaging.com/wp-json/wp/v2/media",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wordpressApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Disposition",
+              "value": "attachment; filename=image.png"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3152,
+        1568
+      ],
+      "id": "3bdb6848-2179-4c50-b7ac-ffd63e0890b6",
+      "name": "HTTP Request3",
+      "credentials": {
+        "wordpressApi": {
+          "id": "5vDeLr0RjwGsJTgA",
+          "name": "Wordpress account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://automation434.wpcomstaging.com/wp-json/wp/v2/posts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wordpressApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "title",
+              "value": "={{ $('Code in JavaScript1').item.json.title }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $('Code in JavaScript1').item.json.content }}"
+            },
+            {
+              "name": "status",
+              "value": "publish"
+            },
+            {
+              "name": "featured_media",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        1568
+      ],
+      "id": "a1019ca6-fa7a-4ea5-ac07-5ad41684fa6c",
+      "name": "HTTP Request4",
+      "credentials": {
+        "wordpressApi": {
+          "id": "5vDeLr0RjwGsJTgA",
+          "name": "Wordpress account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -304,
+        1568
+      ],
+      "id": "13f2322a-a571-4098-86e8-47f952622047",
+      "name": "Schedule Trigger2"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "limit": 1,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1L0uapR5PLqI5yOsj0fXw2J3iXJI3Uy8b",
+            "mode": "list",
+            "cachedResultName": "Novas revistas kabumm",
+            "cachedResultUrl": "https://drive.google.com/drive/folders/1L0uapR5PLqI5yOsj0fXw2J3iXJI3Uy8b"
+          },
+          "whatToSearch": "files"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        320,
+        1568
+      ],
+      "id": "c43d34d4-f6ae-41b2-afcc-df10c10fd146",
+      "name": "Search files and folders1",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "B1BJBJ4kfTVSf1cV",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "akilhassane86@gmail.com",
+        "subject": "Please send the article",
+        "message": "=Please send the article for today in the drive:\n\nhttps://drive.google.com/drive/folders/1L0uapR5PLqI5yOsj0fXw2J3iXJI3Uy8b",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -96,
+        1568
+      ],
+      "id": "f3ca391b-0f08-4e4c-97ea-8d00e594b67c",
+      "name": "Send a message3",
+      "webhookId": "1c03d2b9-ffba-4fbf-ae5f-84f97b5c451d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "RrZx6bIIkjiwXxuQ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        112,
+        1568
+      ],
+      "id": "5b70300f-6bc4-4ccf-b264-e0844b00309d",
+      "name": "Wait",
+      "webhookId": "52070987-d9bf-4e59-8bc9-02ad15db9d24"
+    },
+    {
+      "parameters": {
+        "sendTo": "akilhassane86@gmail.com",
+        "subject": "Image for today",
+        "message": "=Please send the image of the article of the week for today in the drive file:\n\nhttps://drive.google.com/drive/folders/1lET2x3BGK2_aXvYMkXnHgdFDp5_5NyBL",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1824,
+        1568
+      ],
+      "id": "fc380d09-196f-4356-9d49-ffecbd79950c",
+      "name": "Send a message4",
+      "webhookId": "6238fc8b-97d4-450a-aafb-f367bf34a346",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "RrZx6bIIkjiwXxuQ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2032,
+        1568
+      ],
+      "id": "99adae81-306d-46de-9263-3b294be1718b",
+      "name": "Wait1",
+      "webhookId": "4f3c246a-5373-46ed-940d-cc2987a366c5"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1cuS2jpFx4NrNshx5Dp5X9IZTFNNQnnxQLUndsWnP2s8",
+          "mode": "list",
+          "cachedResultName": "Top 20 Artigos",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cuS2jpFx4NrNshx5Dp5X9IZTFNNQnnxQLUndsWnP2s8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Folha1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1cuS2jpFx4NrNshx5Dp5X9IZTFNNQnnxQLUndsWnP2s8/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        1232,
+        1744
+      ],
+      "id": "87f345f0-bf83-4266-a1b9-4f29749f3b86",
+      "name": "Artigos",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "LYaG0GkhPE5hogV2",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Scheduler\n",
+        "height": 480,
+        "width": 4112
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -416,
+        1424
+      ],
+      "typeVersion": 1,
+      "id": "ee286a29-dec3-47aa-a53f-78621d5cb3a2",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "content": "## SEO Based Magazine Generator\n",
+        "height": 784,
+        "width": 4000
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -368,
+        4304
+      ],
+      "typeVersion": 1,
+      "id": "b14104e1-a434-4b86-a512-a3a7c2fafce4",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1584,
+        1568
+      ],
+      "id": "6cacae77-ff65-4f03-a1df-1013d95ee42a",
+      "name": "Wait2",
+      "webhookId": "2483b7d8-c20e-454d-9994-426f71adb527"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start Workflow": {
+      "main": [
+        [
+          {
+            "node": "1. Search PDF Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Search PDF Files": {
+      "main": [
+        [
+          {
+            "node": "2. Download Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Download Files": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Extract Magazine Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Magazine Data": {
+      "main": [
+        [
+          {
+            "node": "AI Agent3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract Text from PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text from PDF": {
+      "main": [
+        [
+          {
+            "node": "AI Content Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Content Generator": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Pro": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Content Generator",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent3",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent3": {
+      "main": [
+        [
+          {
+            "node": "Information Extractor2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Information Extractor2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Information Extractor2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent4": {
+      "main": [
+        [
+          {
+            "node": "Convert to File2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model6": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent4",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File2": {
+      "main": [
+        [
+          {
+            "node": "Send a message2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload file2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search files and folders": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Edit Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Image": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request3": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger2": {
+      "main": [
+        [
+          {
+            "node": "Send a message3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search files and folders1": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message3": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Search files and folders1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message4": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Search files and folders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Artigos": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Content Generator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "Send a message4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "8dd6c703-becc-4ead-a27e-0698fa192f74",
+  "meta": {
+    "instanceId": "9d9943ccfeaf13e8323361391d289ec5f04ed64cf83f6cde6d65bf7f22875d34"
+  },
+  "id": "FMzbYLBCcMUYOPWS",
+  "tags": []
+}
